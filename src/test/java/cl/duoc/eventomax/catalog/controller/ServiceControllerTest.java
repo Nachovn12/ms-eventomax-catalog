@@ -36,7 +36,9 @@ class ServiceControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(serviceController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(serviceController)
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
     }
 
     @Test
@@ -50,12 +52,30 @@ class ServiceControllerTest {
     }
 
     @Test
+    void shouldReturnServiceById() throws Exception {
+        ServiceResponse response = new ServiceResponse(1L, "Service A", "Desc", BigDecimal.TEN, true);
+        when(catalogService.getServiceById(1L)).thenReturn(response);
+
+        mockMvc.perform(get("/api/catalog/services/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Service A"));
+    }
+
+    @Test
+    void shouldReturn404WhenServiceNotFound() throws Exception {
+        when(catalogService.getServiceById(99L)).thenThrow(new ResourceNotFoundException("Service not found"));
+
+        mockMvc.perform(get("/api/catalog/services/99"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void shouldCreateService() throws Exception {
         ServiceResponse response = new ServiceResponse(1L, "New Service", "Desc", BigDecimal.valueOf(100), true);
         
         when(catalogService.createService(any(ServiceRequest.class))).thenReturn(response);
 
-        String jsonRequest = "{ \"name\": \"New Service\", \"description\": \"Desc\", \"rate\": 100, \"active\": true }";
+        String jsonRequest = "{ \"name\": \"New Service\", \"description\": \"Desc\", \"rate\": 100.0, \"active\": true }";
 
         mockMvc.perform(post("/api/catalog/services")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -68,6 +88,26 @@ class ServiceControllerTest {
     void shouldRejectInvalidRequest() throws Exception {
         // Missing name and rate
         String invalidJson = "{ \"description\": \"Desc\", \"active\": true }";
+
+        mockMvc.perform(post("/api/catalog/services")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldRejectEmptyName() throws Exception {
+        String invalidJson = "{ \"name\": \"\", \"description\": \"Desc\", \"rate\": 100.0, \"active\": true }";
+
+        mockMvc.perform(post("/api/catalog/services")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldRejectNegativeRate() throws Exception {
+        String invalidJson = "{ \"name\": \"Valid Name\", \"description\": \"Desc\", \"rate\": -5.0, \"active\": true }";
 
         mockMvc.perform(post("/api/catalog/services")
                 .contentType(MediaType.APPLICATION_JSON)
