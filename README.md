@@ -92,7 +92,34 @@ Flujo de integración:
 
 ## Ejecución local
 
-Las instrucciones de compilación y ejecución se completarán cuando se inicialice el proyecto Spring Boot.
+### Perfil Local
+
+Para desarrollo local, se puede ejecutar la aplicación con el perfil `local`. Este perfil utiliza la configuración de `src/main/resources/application-local.yaml` para conectarse a una base de datos PostgreSQL local.
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### Docker Compose
+
+Para levantar el entorno completo (aplicación y base de datos) usando Docker:
+
+```bash
+# Iniciar los contenedores
+docker-compose up -d --build
+
+# Ver los logs
+docker-compose logs -f
+```
+
+La configuración en `docker-compose.yml` utiliza las variables de entorno de un archivo `.env` (basado en `.env.example`).
+**Nota**: Las variables reales para la conexión a la base de datos en producción (`DB_URL`, `DB_USER`, `DB_PASSWORD`) vienen inyectadas desde el entorno cloud.
+
+## Endpoints Útiles
+
+- **Swagger UI**: [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html)
+- **Actuator Health**: [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health)
+- **Actuator Info**: [http://localhost:8081/actuator/info](http://localhost:8081/actuator/info)
 
 ## Proyecto académico
 

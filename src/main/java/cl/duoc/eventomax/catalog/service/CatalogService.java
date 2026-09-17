@@ -42,4 +42,10 @@ public class CatalogService {
                 service.getActive()
         );
     }
+
+    public ServiceResponse getServiceById(Long id) {
+        return repository.findById(id)
+                .map(this::mapToResponse)
+                .orElseThrow(() -> new cl.duoc.eventomax.catalog.controller.ResourceNotFoundException("Service not found with id: " + id));
+    }
 }
