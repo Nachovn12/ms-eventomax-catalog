@@ -115,6 +115,17 @@ docker-compose logs -f
 La configuración en `docker-compose.yml` utiliza las variables de entorno de un archivo `.env` (basado en `.env.example`).
 **Nota**: Las variables reales para la conexión a la base de datos en producción (`DB_URL`, `DB_USER`, `DB_PASSWORD`) vienen inyectadas desde el entorno cloud.
 
+## API REST del catálogo
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/catalog/services` | Listar servicios |
+| GET | `/api/catalog/services/{id}` | Obtener servicio por ID |
+| POST | `/api/catalog/services` | Crear servicio |
+| PUT | `/api/catalog/services/{id}` | Actualizar servicio |
+
+Las operaciones de escritura reciben un `ServiceRequest` validado y una actualización sobre un ID inexistente responde `404`.
+
 ## Endpoints Útiles
 
 - **Swagger UI**: [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html)
