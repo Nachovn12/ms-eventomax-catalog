@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -82,6 +83,44 @@ class ServiceControllerTest {
                 .content(jsonRequest))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("New Service"));
+    }
+
+    @Test
+    void shouldUpdateService() throws Exception {
+        ServiceResponse response = new ServiceResponse(1L, "Updated Service", "Updated Desc", BigDecimal.valueOf(250), false);
+        when(catalogService.updateService(any(Long.class), any(ServiceRequest.class))).thenReturn(response);
+
+        String jsonRequest = "{ \"name\": \"Updated Service\", \"description\": \"Updated Desc\", \"rate\": 250.0, \"active\": false }";
+
+        mockMvc.perform(put("/api/catalog/services/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonRequest))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated Service"))
+                .andExpect(jsonPath("$.active").value(false));
+    }
+
+    @Test
+    void shouldReturn404WhenUpdatingMissingService() throws Exception {
+        when(catalogService.updateService(any(Long.class), any(ServiceRequest.class)))
+                .thenThrow(new ResourceNotFoundException("Service not found"));
+
+        String jsonRequest = "{ \"name\": \"Updated Service\", \"description\": \"Desc\", \"rate\": 250.0, \"active\": true }";
+
+        mockMvc.perform(put("/api/catalog/services/99")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonRequest))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldRejectInvalidUpdateRequest() throws Exception {
+        String invalidJson = "{ \"description\": \"Desc\", \"active\": true }";
+
+        mockMvc.perform(put("/api/catalog/services/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
