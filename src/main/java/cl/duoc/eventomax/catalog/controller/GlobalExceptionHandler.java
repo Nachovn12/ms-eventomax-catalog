@@ -26,5 +26,12 @@ public class GlobalExceptionHandler {
             errors.put(error.getField(), error.getDefaultMessage()));
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleGlobalException(Exception ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("error", "Ocurrió un error inesperado. Por favor, contacte al administrador.");
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }
 

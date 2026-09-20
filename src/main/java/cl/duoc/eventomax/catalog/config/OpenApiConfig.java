@@ -1,7 +1,10 @@
 package cl.duoc.eventomax.catalog.config;
 
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,7 +17,16 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("API de Catálogo de Servicios - EventoMax")
                         .version("1.0")
-                        .description("Documentación de la API para ms-eventomax-catalog"));
+                        .description("Documentación de la API para ms-eventomax-catalog"))
+                .addSecurityItem(new SecurityRequirement().addList("Bearer Authentication"))
+                .components(new Components().addSecuritySchemes("Bearer Authentication", createAPIKeyScheme()));
+    }
+
+    private SecurityScheme createAPIKeyScheme() {
+        return new SecurityScheme()
+                .type(SecurityScheme.Type.HTTP)
+                .bearerFormat("JWT")
+                .scheme("bearer");
     }
 }
 
