@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 import java.util.List;
 
 @RestController
@@ -31,6 +32,8 @@ public class ServiceController {
     @GetMapping
     @Operation(summary = "List all services", description = "Returns a list of all available services in the catalog")
     @ApiResponse(responseCode = "200", description = "Successful operation")
+    @ApiResponse(responseCode = "401", description = "Unauthorized")
+    @ApiResponse(responseCode = "403", description = "Forbidden")
     public List<ServiceResponse> listServices() {
         return catalogService.listServices();
     }
@@ -38,6 +41,8 @@ public class ServiceController {
     @GetMapping("/{id}")
     @Operation(summary = "Get a service by ID", description = "Returns a single service based on its ID")
     @ApiResponse(responseCode = "200", description = "Service found")
+    @ApiResponse(responseCode = "401", description = "Unauthorized")
+    @ApiResponse(responseCode = "403", description = "Forbidden")
     @ApiResponse(responseCode = "404", description = "Service not found")
     public ServiceResponse getServiceById(@PathVariable Long id) {
         return catalogService.getServiceById(id);
@@ -48,7 +53,20 @@ public class ServiceController {
     @Operation(summary = "Create a new service", description = "Creates a new service in the catalog")
     @ApiResponse(responseCode = "201", description = "Service created successfully")
     @ApiResponse(responseCode = "400", description = "Invalid input")
+    @ApiResponse(responseCode = "401", description = "Unauthorized")
+    @ApiResponse(responseCode = "403", description = "Forbidden")
     public ServiceResponse createService(@Valid @RequestBody ServiceRequest request) {
         return catalogService.createService(request);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Update an existing service", description = "Updates a service by its ID")
+    @ApiResponse(responseCode = "200", description = "Service updated successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid input")
+    @ApiResponse(responseCode = "401", description = "Unauthorized")
+    @ApiResponse(responseCode = "403", description = "Forbidden")
+    @ApiResponse(responseCode = "404", description = "Service not found")
+    public ServiceResponse updateService(@PathVariable Long id, @Valid @RequestBody ServiceRequest request) {
+        return catalogService.updateService(id, request);
     }
 }
