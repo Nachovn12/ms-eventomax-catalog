@@ -1,0 +1,15 @@
+target
+.git
+.idea
+.vscode
+*.log
+.env
+.env.*
+!.env.example
+
+src/main/resources/application-local.properties
+src/main/resources/application-local.yml
+src/main/resources/application-local.yaml
+src/main/resources/application-secrets.properties
+src/main/resources/application-secrets.yml
+src/main/resources/application-secrets.yaml
