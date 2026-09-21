@@ -1,6 +1,7 @@
 package cl.duoc.eventomax.catalog.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -20,6 +21,7 @@ public record ServiceRequest(
 
     @NotNull
     @Positive
+    @Digits(integer = 10, fraction = 2)
     @Schema(description = "Hourly or fixed rate of the service", example = "500.00")
     BigDecimal rate,
 
