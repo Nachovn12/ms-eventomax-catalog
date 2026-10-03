@@ -26,20 +26,17 @@ Microservicio de dominio de **EventoMax** responsable de la gestión de servicio
 - Persistir la información propia del dominio de catálogo.
 - Exponer operaciones bajo `/api/catalog/*`.
 
-## Alcance implementado en EP1
+## Alcance actual implementado
 
-Para EP1, `ms-eventomax-catalog` implementa el vertical mínimo de servicios:
+Actualmente `ms-eventomax-catalog` implementa:
 
-- `GET /api/catalog/services`
-- `GET /api/catalog/services/{id}`
-- `POST /api/catalog/services`
-- `PUT /api/catalog/services/{id}`
-- persistencia con PostgreSQL mediante Spring Data JPA / Hibernate;
-- versionado de esquema con Flyway;
-- despliegue cloud en AWS EC2 conectado a Amazon RDS PostgreSQL;
-- integración protegida mediante API Gateway -> BFF -> Catalog.
-
-La gestión completa de equipos, inventario, disponibilidad y prevención de doble reserva corresponde al alcance semestral posterior.
+- CRUD de servicios.
+- Gestión base de equipos e inventario.
+- Reservas transaccionales de inventario con validación backend.
+- Prevención de sobre-reserva/doble consumo mediante control transaccional.
+- Persistencia PostgreSQL con Spring Data JPA / Hibernate.
+- Versionado de esquema con Flyway.
+- Integración protegida mediante API Gateway -> BFF -> Catalog.
 
 ## Inventario
 
@@ -143,15 +140,18 @@ La demo oficial NO depende de localhost ni del PC del instituto.
 Catalog se ejecuta en AWS EC2 mediante Docker.
 
 Flujo de la arquitectura:
-Microsoft Entra ID -> AWS API Gateway -> ms-eventomax-bff -> ms-eventomax-catalog -> Amazon RDS PostgreSQL
+`Angular → Microsoft Entra ID → AWS API Gateway → ms-eventomax-bff → ms-eventomax-catalog → Amazon RDS PostgreSQL`
 
-Catalog NO es accedido directamente por Angular.
+Aclaraciones de seguridad y despliegue:
+- **Catalog NO es público**: Angular nunca consume Catalog directamente.
+- El BFF consume Catalog internamente mediante: `http://ms-eventomax-catalog:8080`.
+- La comunicación ocurre en la red segura `eventomax-net`.
+- En cloud no se depende de `localhost`.
+- `DB_URL`, `DB_USER` y `DB_PASSWORD` se inyectan de forma segura (variables de entorno en el host).
+- No documentar valores reales ni secretos.
+- Mantener separado desarrollo local de producción.
 
 Producción utiliza el archivo: `docker-compose.prod.yml`
-y requiere las siguientes variables de entorno inyectadas de forma segura (sin hardcodear valores reales):
-- `DB_URL`
-- `DB_USER`
-- `DB_PASSWORD`
 
 Debe existir la red externa `eventomax-net` para que los contenedores se comuniquen. Ejemplo seguro (solo si no existe):
 ```bash
@@ -177,5 +177,5 @@ Diferencia de puertos:
 
 ## Proyecto académico
 
-**Asignatura:** DSY1107 – Desarrollo Cloud Native I  
+**Asignatura:** DSY1107 – Desarrollo Cloud Native I
 **Caso:** Caso 8 – EventoMax
