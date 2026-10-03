@@ -1,8 +1,8 @@
 # EventoMax Catalog
 
-Microservicio de dominio de **EventoMax** responsable de la gestiÃƒÂ³n de servicios, equipos, inventario y tarifas.
+Microservicio de dominio de **EventoMax** responsable de la gestión de servicios, equipos, inventario y tarifas.
 
-## TecnologÃƒÂ­as
+## Tecnologías
 
 - Java 25 LTS
 - Spring Boot
@@ -15,7 +15,7 @@ Microservicio de dominio de **EventoMax** responsable de la gestiÃƒÂ³n de se
 
 ## Responsabilidades
 
-ms-eventomax-catalog debe:
+`ms-eventomax-catalog` debe:
 
 - Administrar servicios disponibles para eventos.
 - Administrar equipos y recursos de montaje.
@@ -23,137 +23,159 @@ ms-eventomax-catalog debe:
 - Gestionar tarifas asociadas a servicios y equipos.
 - Validar disponibilidad antes de reservar inventario.
 - Evitar la doble reserva de equipos.
-- Persistir la informaciÃƒÂ³n propia del dominio de catÃƒÂ¡logo.
-- Exponer operaciones bajo /api/catalog/*.
+- Persistir la información propia del dominio de catálogo.
+- Exponer operaciones bajo `/api/catalog/*`.
 
 ## Alcance actual implementado
 
-El microservicio ms-eventomax-catalog actualmente implementa:
+Actualmente `ms-eventomax-catalog` implementa:
 
-- CRUD de **servicios**.
-- GestiÃƒÂ³n de **equipos** e **inventario**.
-- **Reservas transaccionales de inventario**, mediante control de concurrencia de base de datos.
-- PrevenciÃƒÂ³n backend de **sobre-reserva / doble consumo** mediante la implementaciÃƒÂ³n actual.
-- Persistencia con PostgreSQL mediante Spring Data JPA / Hibernate.
+- CRUD de servicios.
+- Gestión base de equipos e inventario.
+- Reservas transaccionales de inventario con validación backend.
+- Prevención de sobre-reserva/doble consumo mediante control transaccional.
+- Persistencia PostgreSQL con Spring Data JPA / Hibernate.
 - Versionado de esquema con Flyway.
-- Despliegue cloud en AWS EC2 conectado a Amazon RDS PostgreSQL.
-- IntegraciÃƒÂ³n protegida mediante API Gateway -> BFF -> Catalog.
+- Integración protegida mediante API Gateway -> BFF -> Catalog.
+
+## Inventario
+
+EventoMax debe impedir que un mismo equipo sea reservado simultáneamente para eventos incompatibles.
+
+La disponibilidad y reserva de inventario debe validarse en backend.
+
+Cuando corresponda, se utilizarán:
+
+- transacciones;
+- control de concurrencia;
+- validación de disponibilidad;
+- operaciones atómicas sobre reservas.
+
+La lógica de inventario no debe depender de validaciones realizadas únicamente en el frontend.
 
 ## Arquitectura
 
 El microservicio forma parte del flujo seguro de EventoMax:
 
-Angular -> Microsoft Entra ID -> AWS API Gateway -> ms-eventomax-bff -> ms-eventomax-catalog -> Amazon RDS PostgreSQL
+`Angular → Microsoft Entra ID → JWT → AWS API Gateway → ms-eventomax-bff → ms-eventomax-catalog → PostgreSQL`
 
 El frontend no accede directamente a este servicio ni a su base de datos.
 
 ## Persistencia
 
-El microservicio utilizarÃƒÂ¡ PostgreSQL mediante:
+El microservicio utilizará PostgreSQL mediante:
 
 - Spring Data JPA
 - Hibernate
 - Flyway
 
-En cloud se utilizarÃƒÂ¡ Amazon RDS for PostgreSQL.
+En cloud se utilizará Amazon RDS for PostgreSQL.
 
 El servicio es propietario de sus propios datos y no debe realizar consultas SQL directas sobre datos internos de otros microservicios.
 
 ## Seguridad
 
-La autenticaciÃƒÂ³n y autorizaciÃƒÂ³n se realizan mediante Microsoft Entra ID, AWS API Gateway y ms-eventomax-bff.
+La autenticación y autorización se realizan mediante Microsoft Entra ID, AWS API Gateway y `ms-eventomax-bff`.
 
-ms-eventomax-catalog permanece como microservicio interno de dominio y recibe las solicitudes autorizadas desde el BFF a travÃƒÂ©s de la red Docker eventomax-net.
+`ms-eventomax-catalog` permanece como microservicio interno de dominio y recibe las solicitudes autorizadas desde el BFF a través de la red Docker `eventomax-net`.
 
 No se deben almacenar en este repositorio:
 
 - Client Secrets
 - Access Tokens
-- Credenciales AWS
-- Credenciales PostgreSQL
-- Archivos .env reales
-- Passwords o claves privadas
+- credenciales AWS
+- credenciales PostgreSQL
+- archivos `.env` reales
+- passwords o claves privadas
 
 ## Estrategia de ramas
 
-- main: versiÃƒÂ³n estable y preparada para entrega.
-- develop: rama de integraciÃƒÂ³n.
-- eature/*: desarrollo de historias de usuario.
-- ix/*: correcciones.
-- chore/*: configuraciÃƒÂ³n e infraestructura.
+- `main`: versión estable y preparada para entrega.
+- `develop`: rama de integración.
+- `feature/*`: desarrollo de historias de usuario.
+- `fix/*`: correcciones.
+- `chore/*`: configuración e infraestructura.
 
-Flujo de integraciÃƒÂ³n:
+Flujo de integración:
 
-eature/* -> Pull Request -> develop -> pruebas -> Pull Request -> main
+`feature/* → Pull Request → develop → pruebas → Pull Request → main`
 
 ## DESARROLLO LOCAL
 
 Para desarrollo local, se debe utilizar Docker y las variables de entorno.
 
-1. Copiar: .env.example -> .env
-2. Usar: docker-compose.yml
+1. Copiar: `.env.example` -> `.env`
+2. Usar: `docker-compose.yml`
 3. Ejecutar:
 
-``bash
+```bash
 # Iniciar los contenedores
 docker compose up -d --build
 
 # Ver los logs
 docker compose logs -f
-``
+```
 
-Localmente Catalog estÃƒÂ¡ disponible en: http://localhost:8081
+Localmente Catalog está disponible en: `http://localhost:8081`
 
 ### Pruebas
 
-Para ejecutar la suite de pruebas unitarias y empaquetar la aplicaciÃƒÂ³n:
+Para ejecutar la suite de pruebas unitarias y empaquetar la aplicación:
 
 En Windows:
-``bash
+```bash
 .\mvnw.cmd clean test
 .\mvnw.cmd package -DskipTests
-``
+```
 
 En Linux:
-``bash
+```bash
 ./mvnw clean test
 ./mvnw package -DskipTests
-``
+```
 
-## PRODUCCIÃƒâ€œN / DEMO
+## PRODUCCIÓN / DEMO
 
-La demo oficial NO depende de localhost.
-Catalog se ejecuta en AWS EC2 mediante Docker Compose.
+La demo oficial NO depende de localhost ni del PC del instituto.
+Catalog se ejecuta en AWS EC2 mediante Docker.
 
 Flujo de la arquitectura:
-Angular -> Microsoft Entra ID -> AWS API Gateway -> ms-eventomax-bff -> ms-eventomax-catalog -> Amazon RDS PostgreSQL
+`Angular → Microsoft Entra ID → AWS API Gateway → ms-eventomax-bff → ms-eventomax-catalog → Amazon RDS PostgreSQL`
 
 Aclaraciones de seguridad y despliegue:
-- **Catalog NO es pÃƒÂºblico**: Angular nunca consume Catalog directamente.
-- El BFF accede a http://ms-eventomax-catalog:8080 de manera interna, dentro de la red eventomax-net.
-- En cloud no se depende de localhost.
-- DB_URL, DB_USER y DB_PASSWORD deben inyectarse mediante variables de entorno o un mecanismo seguro en el host EC2. Nunca se deben documentar secretos reales.
+- **Catalog NO es público**: Angular nunca consume Catalog directamente.
+- El BFF consume Catalog internamente mediante: `http://ms-eventomax-catalog:8080`.
+- La comunicación ocurre en la red segura `eventomax-net`.
+- En cloud no se depende de `localhost`.
+- `DB_URL`, `DB_USER` y `DB_PASSWORD` se inyectan de forma segura (variables de entorno en el host).
+- No documentar valores reales ni secretos.
+- Mantener separado desarrollo local de producción.
 
-ProducciÃƒÂ³n utiliza el archivo: docker-compose.prod.yml
+Producción utiliza el archivo: `docker-compose.prod.yml`
 
-Para ejecutar en producciÃƒÂ³n:
-``bash
+Debe existir la red externa `eventomax-net` para que los contenedores se comuniquen. Ejemplo seguro (solo si no existe):
+```bash
+docker network create eventomax-net
+```
+
+Para ejecutar en producción:
+```bash
 docker compose -f docker-compose.prod.yml up -d --build
-``
+```
 
-**Importante:** docker-compose.prod.yml NO publica Catalog al host (EC2) para mantener la seguridad. El servicio expone ÃƒÂºnicamente su puerto 8080 interno a la red de Docker eventomax-net.
+**Importante:** `docker-compose.prod.yml` NO publica Catalog al host (EC2) para mantener la seguridad. El servicio expone únicamente su puerto 8080 interno, y el BFF lo consume a través de la red de Docker `eventomax-net`.
 
 Diferencia de puertos:
-- localhost:8081 = entorno local (para pruebas de desarrollo con port mapping).
-- 8080 interno = contenedor / red Docker cloud (cerrado).
+- `localhost:8081` = entorno local (para pruebas de desarrollo).
+- `puerto 8080 interno` = contenedor / red Docker cloud.
 
-## Endpoints ÃƒÂºtiles (Entorno Local)
+## Endpoints Útiles
 
 - **Swagger UI**: [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html)
 - **Actuator Health**: [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health)
 - **Actuator Info**: [http://localhost:8081/actuator/info](http://localhost:8081/actuator/info)
 
-## Proyecto acadÃƒÂ©mico
+## Proyecto académico
 
-**Asignatura:** DSY1107 - Desarrollo Cloud Native I
-**Caso:** Caso 8 - EventoMax
+**Asignatura:** DSY1107 – Desarrollo Cloud Native I
+**Caso:** Caso 8 – EventoMax
