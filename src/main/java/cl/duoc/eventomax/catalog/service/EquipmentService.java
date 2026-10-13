@@ -39,7 +39,7 @@ public class EquipmentService {
     public List<EquipmentResponse> listEquipment() {
         return equipmentRepository.findAll().stream()
                 .map(eq -> {
-                    Inventory inv = inventoryRepository.findByEquipmentIdWithPessimisticWrite(eq.getId())
+                    Inventory inv = inventoryRepository.findByEquipmentIdWithoutLock(eq.getId())
                             .orElse(new Inventory(eq, 0));
                     return mapToResponse(eq, inv);
                 })
@@ -50,7 +50,7 @@ public class EquipmentService {
     public EquipmentResponse getEquipmentById(Long id) {
         Equipment equipment = equipmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
-        Inventory inventory = inventoryRepository.findByEquipmentIdWithPessimisticWrite(id)
+        Inventory inventory = inventoryRepository.findByEquipmentIdWithoutLock(id)
                 .orElse(new Inventory(equipment, 0));
 
         return mapToResponse(equipment, inventory);
