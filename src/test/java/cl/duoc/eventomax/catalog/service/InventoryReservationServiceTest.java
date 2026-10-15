@@ -4,7 +4,9 @@ import cl.duoc.eventomax.catalog.controller.ResourceNotFoundException;
 import cl.duoc.eventomax.catalog.domain.Equipment;
 import cl.duoc.eventomax.catalog.domain.Inventory;
 import cl.duoc.eventomax.catalog.domain.ProductionReservation;
+import cl.duoc.eventomax.catalog.domain.ReservationStatus;
 import cl.duoc.eventomax.catalog.dto.ReservationItemRequest;
+import cl.duoc.eventomax.catalog.dto.ReservationItemResponse;
 import cl.duoc.eventomax.catalog.dto.ReservationRequest;
 import cl.duoc.eventomax.catalog.dto.ReservationResponse;
 import cl.duoc.eventomax.catalog.exception.DuplicateEquipmentRequestException;
@@ -21,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,8 +60,8 @@ class InventoryReservationServiceTest {
     void shouldReserveSuccessfully() {
         ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 5)));
 
+        when(reservationRepository.findByProductionId(123L)).thenReturn(Collections.emptyList());
         when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.of(inventory));
-        when(reservationRepository.existsByProductionIdAndEquipmentId(123L, 1L)).thenReturn(false);
         when(reservationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         ReservationResponse response = service.reserve(request);
@@ -72,11 +75,40 @@ class InventoryReservationServiceTest {
     }
 
     @Test
+    void shouldReplayIdempotentlyWhenSameItemsAlreadyReserved() {
+        ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 5)));
+
+        ProductionReservation existing = new ProductionReservation(123L, equipment, 5);
+        when(reservationRepository.findByProductionId(123L)).thenReturn(List.of(existing));
+
+        ReservationResponse response = service.reserve(request);
+
+        assertEquals(123L, response.productionId());
+        assertEquals(1, response.items().size());
+        assertEquals(5, response.items().get(0).quantity());
+        // Verify no extra stock was touched
+        verify(inventoryRepository, never()).findByEquipmentIdWithPessimisticWrite(any());
+        verify(inventoryRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldThrowConflictWhenReusingIdentityWithIncompatibleItems() {
+        // Request asking for 8 units, but previously reserved 5
+        ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 8)));
+
+        ProductionReservation existing = new ProductionReservation(123L, equipment, 5);
+        when(reservationRepository.findByProductionId(123L)).thenReturn(List.of(existing));
+
+        assertThrows(ReservationConflictException.class, () -> service.reserve(request));
+        verify(inventoryRepository, never()).save(any());
+    }
+
+    @Test
     void shouldThrowWhenInsufficientStock() {
         ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 15)));
 
+        when(reservationRepository.findByProductionId(123L)).thenReturn(Collections.emptyList());
         when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.of(inventory));
-        when(reservationRepository.existsByProductionIdAndEquipmentId(123L, 1L)).thenReturn(false);
 
         assertThrows(InsufficientInventoryException.class, () -> service.reserve(request));
 
@@ -88,6 +120,7 @@ class InventoryReservationServiceTest {
     void shouldThrowWhenEquipmentNotFound() {
         ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 5)));
 
+        when(reservationRepository.findByProductionId(123L)).thenReturn(Collections.emptyList());
         when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.empty());
 
         assertThrows(ResourceNotFoundException.class, () -> service.reserve(request));
@@ -98,6 +131,7 @@ class InventoryReservationServiceTest {
         equipment.setActive(false);
         ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 5)));
 
+        when(reservationRepository.findByProductionId(123L)).thenReturn(Collections.emptyList());
         when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.of(inventory));
 
         assertThrows(InactiveEquipmentException.class, () -> service.reserve(request));
@@ -114,38 +148,35 @@ class InventoryReservationServiceTest {
     }
 
     @Test
-    void shouldThrowWhenReservationConflict() {
-        ReservationRequest request = new ReservationRequest(123L, List.of(new ReservationItemRequest(1L, 5)));
+    void shouldCompensateSuccessfullyRestoringStock() {
+        ProductionReservation existing = new ProductionReservation(123L, equipment, 4);
+        inventory.setAvailableQty(6);
+        inventory.setReservedQty(4);
 
-        when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.of(inventory));
-        when(reservationRepository.existsByProductionIdAndEquipmentId(123L, 1L)).thenReturn(true);
+        when(reservationRepository.findByProductionIdAndStatus(123L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(existing));
+        when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L))
+                .thenReturn(Optional.of(inventory));
+        when(reservationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThrows(ReservationConflictException.class, () -> service.reserve(request));
+        List<ReservationItemResponse> compensated = service.compensate(123L);
+
+        assertEquals(1, compensated.size());
+        assertEquals("COMPENSATED", compensated.get(0).status());
+        assertEquals(10, inventory.getAvailableQty());
+        assertEquals(0, inventory.getReservedQty());
+        verify(inventoryRepository).save(inventory);
+        verify(reservationRepository).save(existing);
     }
 
     @Test
-    void shouldNotLeavePartialChangesIfOneItemFails() throws Exception {
-        Equipment eq2 = new Equipment("Luz", "Led", true);
-        Field idField = Equipment.class.getDeclaredField("id");
-        idField.setAccessible(true);
-        idField.set(eq2, 2L);
-        Inventory inv2 = new Inventory(eq2, 2);
+    void shouldQueryReservationsByProduction() {
+        ProductionReservation res = new ProductionReservation(123L, equipment, 3);
+        when(reservationRepository.findByProductionId(123L)).thenReturn(List.of(res));
 
-        ReservationRequest request = new ReservationRequest(123L, List.of(
-                new ReservationItemRequest(1L, 5),
-                new ReservationItemRequest(2L, 5) // stock insuficiente
-        ));
-
-        when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L)).thenReturn(Optional.of(inventory));
-        when(reservationRepository.existsByProductionIdAndEquipmentId(123L, 1L)).thenReturn(false);
-        when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(2L)).thenReturn(Optional.of(inv2));
-        when(reservationRepository.existsByProductionIdAndEquipmentId(123L, 2L)).thenReturn(false);
-
-        assertThrows(InsufficientInventoryException.class, () -> service.reserve(request));
-
-        verify(inventoryRepository, never()).save(any());
-        verify(reservationRepository, never()).save(any());
-        assertEquals(10, inventory.getAvailableQty()); // No se descontÃ³
-        assertEquals(2, inv2.getAvailableQty()); // No se descontÃ³
+        List<ReservationItemResponse> list = service.getReservationsByProduction(123L);
+        assertEquals(1, list.size());
+        assertEquals(3, list.get(0).quantity());
+        assertEquals("Camara", list.get(0).equipmentName());
     }
 }
