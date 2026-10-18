@@ -5,6 +5,7 @@ import cl.duoc.eventomax.catalog.domain.Equipment;
 import cl.duoc.eventomax.catalog.domain.Inventory;
 import cl.duoc.eventomax.catalog.dto.EquipmentRequest;
 import cl.duoc.eventomax.catalog.dto.EquipmentResponse;
+import cl.duoc.eventomax.catalog.dto.EquipmentUpdateRequest;
 import cl.duoc.eventomax.catalog.repository.EquipmentRepository;
 import cl.duoc.eventomax.catalog.repository.InventoryRepository;
 import org.springframework.stereotype.Service;
@@ -52,6 +53,29 @@ public class EquipmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
         Inventory inventory = inventoryRepository.findByEquipmentIdWithoutLock(id)
                 .orElse(new Inventory(equipment, 0));
+
+        return mapToResponse(equipment, inventory);
+    }
+
+    @Transactional
+    public EquipmentResponse updateEquipment(Long id, EquipmentUpdateRequest request) {
+        Equipment equipment = equipmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Equipment not found"));
+
+        // Bloqueo pesimista sobre el inventario existente para coordinar con reservas/compensaciones concurrentes
+        Inventory inventory = inventoryRepository.findByEquipmentIdWithPessimisticWrite(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Inventory not found for equipment id: " + id));
+
+        equipment.setName(request.name().trim());
+        equipment.setDescription(request.description() != null ? request.description().trim() : null);
+        equipment.setActive(request.active());
+        equipment = equipmentRepository.save(equipment);
+
+        if (request.availableQty() != null) {
+            inventory.setAvailableQty(request.availableQty());
+            // reservedQty nunca se altera directamente aquí: se preserva intacto
+            inventory = inventoryRepository.save(inventory);
+        }
 
         return mapToResponse(equipment, inventory);
     }

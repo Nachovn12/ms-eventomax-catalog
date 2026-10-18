@@ -30,13 +30,13 @@ Microservicio de dominio de **EventoMax** responsable de la gestión de servicio
 
 Actualmente `ms-eventomax-catalog` implementa:
 
-- CRUD de servicios.
-- Gestión base de equipos e inventario.
-- Reservas transaccionales de inventario con validación backend.
-- Prevención de sobre-reserva/doble consumo mediante control transaccional.
-- Persistencia PostgreSQL con Spring Data JPA / Hibernate.
-- Versionado de esquema con Flyway.
-- Integración protegida mediante API Gateway -> BFF -> Catalog.
+- CRUD de servicios (`/api/catalog/services`).
+- CRUD de equipos y gestión de stock disponible (`POST`, `GET`, `PUT /api/catalog/equipment`).
+- Reservas transaccionales de inventario con validación backend y protocolo de generaciones V3 (`X-Reservation-Generation`).
+- Prevención de sobre-reserva/doble consumo mediante control transaccional y replay idempotente.
+- Compensación técnica de reservas y liberación atómica de inventario.
+- Persistencia PostgreSQL con Spring Data JPA / Hibernate y validación Flyway (`ddl-auto: validate`).
+- Integración protegida mediante API Gateway -> BFF -> Catalog (red interna privada `eventomax-net`).
 
 ## Inventario
 
