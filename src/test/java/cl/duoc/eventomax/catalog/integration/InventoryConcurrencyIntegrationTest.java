@@ -2,15 +2,18 @@ package cl.duoc.eventomax.catalog.integration;
 
 import cl.duoc.eventomax.catalog.domain.Equipment;
 import cl.duoc.eventomax.catalog.domain.Inventory;
+import cl.duoc.eventomax.catalog.dto.EquipmentUpdateRequest;
 import cl.duoc.eventomax.catalog.dto.ReservationItemRequest;
 import cl.duoc.eventomax.catalog.dto.ReservationItemResponse;
 import cl.duoc.eventomax.catalog.dto.ReservationRequest;
 import cl.duoc.eventomax.catalog.dto.ReservationResponse;
+import cl.duoc.eventomax.catalog.exception.InactiveEquipmentException;
 import cl.duoc.eventomax.catalog.exception.InsufficientInventoryException;
 import cl.duoc.eventomax.catalog.exception.ReservationConflictException;
 import cl.duoc.eventomax.catalog.repository.EquipmentRepository;
 import cl.duoc.eventomax.catalog.repository.InventoryRepository;
 import cl.duoc.eventomax.catalog.repository.ProductionReservationRepository;
+import cl.duoc.eventomax.catalog.service.EquipmentService;
 import cl.duoc.eventomax.catalog.service.InventoryReservationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -70,6 +73,9 @@ public class InventoryConcurrencyIntegrationTest {
 
     @Autowired
     private ProductionReservationRepository reservationRepository;
+
+    @Autowired
+    private EquipmentService equipmentService;
 
     private Long testEquipmentId;
 
@@ -512,5 +518,122 @@ public class InventoryConcurrencyIntegrationTest {
         // Legitimate compensation of generation 1 releases it
         reservationService.compensate(id, 1L);
         assertEquals(10, inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow().getAvailableQty());
+    }
+
+    @Test
+    void testConcurrentStockUpdateSimultaneousWithReservationAndCompensation() throws Exception {
+        // Pre-reservamos 3 unidades para la producción B (prodB = 77002L, generación 1L)
+        long prodB = 77002L;
+        reservationService.reserve(new ReservationRequest(prodB, List.of(new ReservationItemRequest(testEquipmentId, 3))), 1L);
+
+        // Estado inicial verificado: availableQty = 7, reservedQty = 3
+        var initialInventory = inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow();
+        assertEquals(7, initialInventory.getAvailableQty());
+        assertEquals(3, initialInventory.getReservedQty());
+
+        // Producción A intentará confirmar/reservar 4 unidades (gen 1L)
+        long prodA = 77001L;
+
+        int threads = 3;
+        ExecutorService executor = Executors.newFixedThreadPool(threads);
+        CountDownLatch startGate = new CountDownLatch(1);
+
+        // Hilo 1: Actualización de stock (Admin actualiza disponibles a 20 unidades sin tocar reservedQty)
+        Future<?> updateFuture = executor.submit(() -> {
+            try {
+                startGate.await();
+                equipmentService.updateEquipment(testEquipmentId,
+                        new EquipmentUpdateRequest("Foco Robótico 500W Pro", "Descripción actualizada", true, 20));
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException("Error en updateEquipment", e);
+            }
+        });
+
+        // Hilo 2: Confirmación con reserva de 4 unidades para Producción A
+        Future<?> reserveFuture = executor.submit(() -> {
+            try {
+                startGate.await();
+                return reservationService.reserve(
+                        new ReservationRequest(prodA, List.of(new ReservationItemRequest(testEquipmentId, 4))), 1L);
+            } catch (Exception e) {
+                throw new RuntimeException("Error en reserve", e);
+            }
+        });
+
+        // Hilo 3: Compensación técnica de Producción B (devuelve 3 unidades)
+        Future<?> compensateFuture = executor.submit(() -> {
+            try {
+                startGate.await();
+                return reservationService.compensate(prodB, 1L);
+            } catch (Exception e) {
+                throw new RuntimeException("Error en compensate", e);
+            }
+        });
+
+        // Disparar simultáneamente los 3 hilos compitiendo por el lock pesimista de inventario
+        startGate.countDown();
+
+        // Esperar a que terminen los 3 hilos con timeout
+        updateFuture.get(10, TimeUnit.SECONDS);
+        reserveFuture.get(10, TimeUnit.SECONDS);
+        compensateFuture.get(10, TimeUnit.SECONDS);
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+
+        // Verificaciones de estado e invariantes:
+        var finalInventory = inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow();
+        var finalEquipment = equipmentRepository.findById(testEquipmentId).orElseThrow();
+
+        // 1. Datos del equipo actualizados
+        assertEquals("Foco Robótico 500W Pro", finalEquipment.getName());
+        assertEquals("Descripción actualizada", finalEquipment.getDescription());
+        assertTrue(finalEquipment.getActive());
+
+        // 2. Integridad de reservedQty:
+        // Producción A reservó 4 unidades. Producción B fue compensada (0 unidades reservadas).
+        // Por tanto, reservedQty DEBE ser exactamente 4.
+        assertEquals(4, finalInventory.getReservedQty(),
+                "reservedQty debe ser 4 (solo Producción A activa tras compensación de B y actualización de Admin)");
+
+        // 3. Stock disponible no debe ser negativo y debe ser consistente con la actualización y transacciones
+        assertTrue(finalInventory.getAvailableQty() >= 16,
+                "availableQty debe ser al menos 16 (20 fijados por admin - 4 reservados por A)");
+
+        // 4. Integridad de filas de reserva
+        var resA = reservationRepository.findByProductionId(prodA);
+        assertEquals(1, resA.size());
+        assertEquals(cl.duoc.eventomax.catalog.domain.ReservationStatus.RESERVED, resA.get(0).getStatus());
+        assertEquals(4, resA.get(0).getQuantity());
+
+        var resB = reservationRepository.findByProductionId(prodB);
+        assertEquals(1, resB.size());
+        assertEquals(cl.duoc.eventomax.catalog.domain.ReservationStatus.COMPENSATED, resB.get(0).getStatus());
+    }
+
+    @Test
+    void testUpdateEquipmentLogicalDeactivationBlocksSubsequentReservations() {
+        long prodId = 77003L;
+
+        // Desactivación lógica vía updateEquipment
+        equipmentService.updateEquipment(testEquipmentId,
+                new EquipmentUpdateRequest("Foco Robótico Inactivo", "Desactivado por mantención", false, 10));
+
+        var updatedEq = equipmentRepository.findById(testEquipmentId).orElseThrow();
+        assertFalse(updatedEq.getActive());
+
+        // Intentar reservar un equipo inactivo debe fallar con InactiveEquipmentException
+        var req = new ReservationRequest(prodId, List.of(new ReservationItemRequest(testEquipmentId, 2)));
+        assertThrows(InactiveEquipmentException.class, () -> reservationService.reserve(req, 1L));
+
+        // Reactivación lógica
+        equipmentService.updateEquipment(testEquipmentId,
+                new EquipmentUpdateRequest("Foco Robótico Activo", "Reactivado", true, 10));
+
+        // Ahora la reserva debe ser exitosa
+        var res = reservationService.reserve(req, 1L);
+        assertNotNull(res);
+        assertEquals(1, res.items().size());
+        assertEquals(2, res.items().get(0).quantity());
     }
 }
