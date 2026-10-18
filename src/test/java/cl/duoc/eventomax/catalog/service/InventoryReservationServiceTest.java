@@ -15,6 +15,7 @@ import cl.duoc.eventomax.catalog.exception.InsufficientInventoryException;
 import cl.duoc.eventomax.catalog.exception.ReservationConflictException;
 import cl.duoc.eventomax.catalog.repository.InventoryRepository;
 import cl.duoc.eventomax.catalog.repository.ProductionReservationRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +40,9 @@ class InventoryReservationServiceTest {
 
     @Mock
     private ProductionReservationRepository reservationRepository;
+
+    @Mock
+    private EntityManager entityManager;
 
     @InjectMocks
     private InventoryReservationService service;
@@ -148,8 +152,12 @@ class InventoryReservationServiceTest {
     }
 
     @Test
-    void shouldCompensateSuccessfullyRestoringStock() {
+    void shouldCompensateSuccessfullyRestoringStock() throws Exception {
         ProductionReservation existing = new ProductionReservation(123L, equipment, 4);
+        Field resIdField = ProductionReservation.class.getDeclaredField("id");
+        resIdField.setAccessible(true);
+        resIdField.set(existing, 1L);
+
         inventory.setAvailableQty(6);
         inventory.setReservedQty(4);
 
@@ -167,6 +175,37 @@ class InventoryReservationServiceTest {
         assertEquals(0, inventory.getReservedQty());
         verify(inventoryRepository).save(inventory);
         verify(reservationRepository).save(existing);
+        verify(entityManager).refresh(existing, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    void shouldThrowWhenCompensatingWithNullId() {
+        ProductionReservation existing = new ProductionReservation(123L, equipment, 4);
+        // id is left as null
+        when(reservationRepository.findByProductionIdAndStatus(123L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(existing));
+
+        assertThrows(IllegalStateException.class, () -> service.compensate(123L));
+        verify(inventoryRepository, never()).save(any());
+    }
+
+    @Test
+    void shouldThrowWhenCompensatingViolatesReservedQuantityInvariant() throws Exception {
+        ProductionReservation existing = new ProductionReservation(123L, equipment, 4);
+        Field resIdField = ProductionReservation.class.getDeclaredField("id");
+        resIdField.setAccessible(true);
+        resIdField.set(existing, 1L);
+
+        inventory.setAvailableQty(6);
+        inventory.setReservedQty(2); // Invariant violation: reservedQty (2) < compensation quantity (4)
+
+        when(reservationRepository.findByProductionIdAndStatus(123L, ReservationStatus.RESERVED))
+                .thenReturn(List.of(existing));
+        when(inventoryRepository.findByEquipmentIdWithPessimisticWrite(1L))
+                .thenReturn(Optional.of(inventory));
+
+        assertThrows(IllegalStateException.class, () -> service.compensate(123L));
+        verify(inventoryRepository, never()).save(any());
     }
 
     @Test
