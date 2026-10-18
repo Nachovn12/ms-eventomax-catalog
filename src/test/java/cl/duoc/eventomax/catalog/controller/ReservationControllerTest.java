@@ -1,5 +1,6 @@
 package cl.duoc.eventomax.catalog.controller;
 
+import cl.duoc.eventomax.catalog.dto.ReservationItemResponse;
 import cl.duoc.eventomax.catalog.dto.ReservationRequest;
 import cl.duoc.eventomax.catalog.dto.ReservationResponse;
 import cl.duoc.eventomax.catalog.exception.InsufficientInventoryException;
@@ -18,7 +19,9 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
@@ -67,12 +70,33 @@ class ReservationControllerTest {
 
     @Test
     void shouldReturn400OnInvalidPayload() throws Exception {
-        // missing items
         String jsonRequest = "{ \"productionId\": 123 }";
 
         mockMvc.perform(post("/api/catalog/reservations")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jsonRequest))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void shouldGetReservationsByProduction() throws Exception {
+        ReservationItemResponse item = new ReservationItemResponse(1L, 10L, "Foco LED", 2, "RESERVED");
+        when(reservationService.getReservationsByProduction(123L)).thenReturn(List.of(item));
+
+        mockMvc.perform(get("/api/catalog/reservations/production/123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].equipmentId").value(10))
+                .andExpect(jsonPath("$[0].quantity").value(2))
+                .andExpect(jsonPath("$[0].status").value("RESERVED"));
+    }
+
+    @Test
+    void shouldCompensateReservations() throws Exception {
+        ReservationItemResponse item = new ReservationItemResponse(1L, 10L, "Foco LED", 2, "COMPENSATED");
+        when(reservationService.compensate(123L)).thenReturn(List.of(item));
+
+        mockMvc.perform(post("/api/catalog/reservations/production/123/compensate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("COMPENSATED"));
     }
 }

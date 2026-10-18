@@ -44,4 +44,5 @@ public class ProductionReservation {
     public Integer getQuantity() { return quantity; }
     public ReservationStatus getStatus() { return status; }
     public void setStatus(ReservationStatus status) { this.status = status; }
+    public void setQuantity(Integer quantity) { this.quantity = quantity; }
 }

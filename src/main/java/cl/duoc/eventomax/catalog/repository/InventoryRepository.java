@@ -10,6 +10,10 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface InventoryRepository extends JpaRepository<Inventory, Long> {
+    // Consulta sin bloqueo para operaciones de solo lectura
+    @Query("SELECT i FROM Inventory i WHERE i.equipment.id = :equipmentId")
+    Optional<Inventory> findByEquipmentIdWithoutLock(@Param("equipmentId") Long equipmentId);
+
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT i FROM Inventory i WHERE i.equipment.id = :equipmentId")
