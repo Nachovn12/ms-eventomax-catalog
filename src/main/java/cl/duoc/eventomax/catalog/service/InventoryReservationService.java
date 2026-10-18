@@ -62,6 +62,11 @@ public class InventoryReservationService {
 
     @Transactional
     public ReservationResponse reserve(ReservationRequest request) {
+        return reserve(request, null);
+    }
+
+    @Transactional
+    public ReservationResponse reserve(ReservationRequest request, Long generation) {
         if (request.items() == null || request.items().isEmpty()) {
             throw new IllegalArgumentException("Reservation request items cannot be null or empty");
         }
@@ -82,6 +87,9 @@ public class InventoryReservationService {
 
         // B. Serializar operaciones para la misma producción a nivel transaccional
         acquireProductionLock(request.productionId());
+        if (!checkGeneration(request.productionId(), generation, false)) {
+            throw new ReservationConflictException("Reservation generation is closed or stale");
+        }
 
         // C. Fast-path: Verificar reservas existentes para esta productionId antes de adquirir locks
         List<ProductionReservation> existingReservations = reservationRepository.findByProductionId(request.productionId());
@@ -172,6 +180,64 @@ public class InventoryReservationService {
         return new ReservationResponse(request.productionId(), itemResponses);
     }
 
+
+    /** Called under the same transaction and per-production advisory lock as stock changes. */
+    private boolean checkGeneration(Long productionId, Long generation, boolean compensate) {
+        if (generation != null && generation <= 0) {
+            throw new IllegalArgumentException("Reservation generation must be positive");
+        }
+        // Legacy operations are supported only until a production adopts the fenced protocol.
+        // No generation may bypass a persisted tombstone, including an old unversioned client.
+        if (generation == null) {
+            if (entityManager != null) {
+                var query = entityManager.createNativeQuery(
+                        "SELECT generation FROM reservation_generations WHERE production_id = :id");
+                if (query != null && !query.setParameter("id", productionId).getResultList().isEmpty()) {
+                    throw new ReservationConflictException("Reservation generation is required for this production");
+                }
+            }
+            return true;
+        }
+        var rows = entityManager.createNativeQuery(
+                "SELECT generation, closed FROM reservation_generations WHERE production_id = :id")
+                .setParameter("id", productionId).getResultList();
+        if (!rows.isEmpty()) {
+            Object[] row = (Object[]) rows.getFirst();
+            long current = ((Number) row[0]).longValue();
+            boolean closed = (Boolean) row[1];
+            if (generation < current) return false;
+            if (generation == current) {
+                if (closed) return false;
+                if (compensate) {
+                    entityManager.createNativeQuery(
+                            "UPDATE reservation_generations SET closed = true WHERE production_id = :id")
+                            .setParameter("id", productionId).executeUpdate();
+                }
+                return true;
+            }
+            // generation > current: A future compensation or reservation must not touch an active previous generation
+            if (!closed) {
+                throw new ReservationConflictException("Previous reservation generation is still active");
+            }
+            if (compensate) {
+                entityManager.createNativeQuery(
+                        "UPDATE reservation_generations SET generation = :generation, closed = true WHERE production_id = :id")
+                        .setParameter("id", productionId)
+                        .setParameter("generation", generation)
+                        .executeUpdate();
+                return false; // Prior generation was already closed, and future generation never reserved
+            }
+        } else if (!reservationRepository.findByProductionIdAndStatus(productionId, ReservationStatus.RESERVED).isEmpty()) {
+            throw new ReservationConflictException("Legacy active reservation requires reconciliation before generation adoption");
+        }
+        entityManager.createNativeQuery("INSERT INTO reservation_generations (production_id, generation, closed) "
+                + "VALUES (:id, :generation, :closed) ON CONFLICT (production_id) DO UPDATE "
+                + "SET generation = EXCLUDED.generation, closed = EXCLUDED.closed")
+                .setParameter("id", productionId).setParameter("generation", generation)
+                .setParameter("closed", compensate).executeUpdate();
+        return true;
+    }
+
     private ReservationResponse resolveExistingReservation(ReservationRequest request, List<ProductionReservation> activeReservations) {
         Map<Long, Integer> existingMap = activeReservations.stream()
                 .collect(Collectors.toMap(r -> r.getEquipment().getId(), ProductionReservation::getQuantity));
@@ -200,12 +266,20 @@ public class InventoryReservationService {
 
     @Transactional
     public List<ReservationItemResponse> compensate(Long productionId) {
+        return compensate(productionId, null);
+    }
+
+    @Transactional
+    public List<ReservationItemResponse> compensate(Long productionId, Long generation) {
         if (productionId == null) {
             throw new IllegalArgumentException("productionId cannot be null");
         }
 
         // 1. Serializar operaciones de compensación para la misma producción a nivel transaccional
         acquireProductionLock(productionId);
+        if (!checkGeneration(productionId, generation, true)) {
+            return List.of(); // A delayed compensation must never release a newer reservation.
+        }
 
         // 2. Consultar reservas activas iniciales para la producción
         List<ProductionReservation> activeReservations = reservationRepository.findByProductionIdAndStatus(productionId, ReservationStatus.RESERVED);

@@ -464,4 +464,53 @@ public class InventoryConcurrencyIntegrationTest {
             assertEquals(0, foco.getReservedQty());
         }
     }
+
+    @Test
+    void compensationBeforeReserveClosesGenerationDurably() {
+        long id = 90001L;
+        var request = new ReservationRequest(id, List.of(new ReservationItemRequest(testEquipmentId, 2)));
+        reservationService.compensate(id, 1L);
+        assertThrows(ReservationConflictException.class, () -> reservationService.reserve(request, 1L));
+        var inventory = inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow();
+        assertEquals(10, inventory.getAvailableQty());
+        assertEquals(0, inventory.getReservedQty());
+    }
+
+    @Test
+    void staleCompensationCannotReleaseNewGenerationAndLegacyCannotBypassFence() {
+        long id = 90002L;
+        var request = new ReservationRequest(id, List.of(new ReservationItemRequest(testEquipmentId, 2)));
+        reservationService.reserve(request, 1L);
+        reservationService.compensate(id, 1L);
+        reservationService.reserve(request, 2L);
+        reservationService.compensate(id, 1L);
+        assertThrows(ReservationConflictException.class, () -> reservationService.reserve(request, 1L));
+        assertThrows(ReservationConflictException.class, () -> reservationService.compensate(id));
+        assertThrows(ReservationConflictException.class, () -> reservationService.reserve(request));
+        var inventory = inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow();
+        assertEquals(8, inventory.getAvailableQty());
+        assertEquals(2, inventory.getReservedQty());
+        reservationService.compensate(id, 2L);
+        reservationService.compensate(id, 2L);
+        assertEquals(10, inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow().getAvailableQty());
+    }
+
+    @Test
+    void futureGenerationCompensationCannotReleaseActivePreviousGeneration() {
+        long id = 90003L;
+        var request = new ReservationRequest(id, List.of(new ReservationItemRequest(testEquipmentId, 3)));
+        reservationService.reserve(request, 1L);
+
+        // An incoming compensation for future generation 2 must NOT release generation 1's active reservation
+        assertThrows(ReservationConflictException.class, () -> reservationService.compensate(id, 2L));
+
+        // Verify inventory of generation 1 is still safely reserved
+        var inventory = inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow();
+        assertEquals(7, inventory.getAvailableQty());
+        assertEquals(3, inventory.getReservedQty());
+
+        // Legitimate compensation of generation 1 releases it
+        reservationService.compensate(id, 1L);
+        assertEquals(10, inventoryRepository.findByEquipmentIdWithoutLock(testEquipmentId).orElseThrow().getAvailableQty());
+    }
 }
