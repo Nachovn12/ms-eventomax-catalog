@@ -1,181 +1,122 @@
-# EventoMax Catalog
+# ms-eventomax-catalog — Microservicio de Catálogo de Servicios, Equipamiento y Reservas Transaccionales (EP2)
 
-Microservicio de dominio de **EventoMax** responsable de la gestión de servicios, equipos, inventario y tarifas.
+**Asignatura:** Desarrollo Cloud Native I (`DSY1107`)
+**Caso de Estudio:** Caso 8 — Plataforma de Producción y Montaje de Eventos (**EventoMax**)
+**Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
 
-## Tecnologías
+---
 
-- Java 25 LTS
-- Spring Boot
-- Spring Data JPA
-- Hibernate
-- Flyway
-- PostgreSQL
-- Maven
-- OpenAPI / Swagger
+## 1. Propósito del Repositorio y Rol en EventoMax
 
-## Responsabilidades
+`ms-eventomax-catalog` gestiona el catálogo maestro de servicios contratables, el inventario físico de equipamiento técnico (sonido, iluminación, escenarios, video) y las reservas atómicas e idempotentes por producción con control de concurrencia pesimista (`PESSIMISTIC_WRITE`) y *generation fencing* (`reservation_generation`).
 
-`ms-eventomax-catalog` debe:
+En **EventoMax EP2**, además de soportar la confirmación transaccional de producciones desde `ms-eventomax-productions`, provee información referencial en tiempo real a `ms-eventomax-notify` (`CatalogEquipmentClient`) para enriquecer el **Acta de Cierre en PDF** con la disponibilidad operativa del catálogo.
 
-- Administrar servicios disponibles para eventos.
-- Administrar equipos y recursos de montaje.
-- Gestionar inventario y disponibilidad.
-- Gestionar tarifas asociadas a servicios y equipos.
-- Validar disponibilidad antes de reservar inventario.
-- Evitar la doble reserva de equipos.
-- Persistir la información propia del dominio de catálogo.
-- Exponer operaciones bajo `/api/catalog/*`.
+---
 
-## Alcance actual implementado
+## 2. Arquitectura del Módulo y Diagrama
 
-Actualmente `ms-eventomax-catalog` implementa:
-
-- CRUD de servicios (`/api/catalog/services`).
-- CRUD de equipos y gestión de stock disponible (`POST`, `GET`, `PUT /api/catalog/equipment`).
-- Reservas transaccionales de inventario con validación backend y protocolo de generaciones V3 (`X-Reservation-Generation`).
-- Prevención de sobre-reserva/doble consumo mediante control transaccional y replay idempotente.
-- Compensación técnica de reservas y liberación atómica de inventario.
-- Persistencia PostgreSQL con Spring Data JPA / Hibernate y validación Flyway (`ddl-auto: validate`).
-- Integración protegida mediante API Gateway -> BFF -> Catalog (red interna privada `eventomax-net`).
-
-## Inventario
-
-EventoMax debe impedir que un mismo equipo sea reservado simultáneamente para eventos incompatibles.
-
-La disponibilidad y reserva de inventario debe validarse en backend.
-
-Cuando corresponda, se utilizarán:
-
-- transacciones;
-- control de concurrencia;
-- validación de disponibilidad;
-- operaciones atómicas sobre reservas.
-
-La lógica de inventario no debe depender de validaciones realizadas únicamente en el frontend.
-
-## Arquitectura
-
-El microservicio forma parte del flujo seguro de EventoMax:
-
-`Angular → Microsoft Entra ID → JWT → AWS API Gateway → ms-eventomax-bff → ms-eventomax-catalog → PostgreSQL`
-
-El frontend no accede directamente a este servicio ni a su base de datos.
-
-## Persistencia
-
-El microservicio utilizará PostgreSQL mediante:
-
-- Spring Data JPA
-- Hibernate
-- Flyway
-
-En cloud se utilizará Amazon RDS for PostgreSQL.
-
-El servicio es propietario de sus propios datos y no debe realizar consultas SQL directas sobre datos internos de otros microservicios.
-
-## Seguridad
-
-La autenticación y autorización se realizan mediante Microsoft Entra ID, AWS API Gateway y `ms-eventomax-bff`.
-
-`ms-eventomax-catalog` permanece como microservicio interno de dominio y recibe las solicitudes autorizadas desde el BFF a través de la red Docker `eventomax-net`.
-
-No se deben almacenar en este repositorio:
-
-- Client Secrets
-- Access Tokens
-- credenciales AWS
-- credenciales PostgreSQL
-- archivos `.env` reales
-- passwords o claves privadas
-
-## Estrategia de ramas
-
-- `main`: versión estable y preparada para entrega.
-- `develop`: rama de integración.
-- `feature/*`: desarrollo de historias de usuario.
-- `fix/*`: correcciones.
-- `chore/*`: configuración e infraestructura.
-
-Flujo de integración:
-
-`feature/* → Pull Request → develop → pruebas → Pull Request → main`
-
-## DESARROLLO LOCAL
-
-Para desarrollo local, se debe utilizar Docker y las variables de entorno.
-
-1. Copiar: `.env.example` -> `.env`
-2. Usar: `docker-compose.yml`
-3. Ejecutar:
-
-```bash
-# Iniciar los contenedores
-docker compose up -d --build
-
-# Ver los logs
-docker compose logs -f
+```mermaid
+flowchart LR
+    BFF["ms-eventomax-bff"] -->|/api/catalog/**| CAT["ms-eventomax-catalog (:8080)"]
+    PROD["ms-eventomax-productions"] -->|POST /api/catalog/reservations\nPOST /api/catalog/reservations/compensations| CAT
+    NOTIFY["ms-eventomax-notify"] -->|GET /api/catalog/equipment\n(Enriquecimiento Acta PDF)| CAT
+    CAT <-->|JPA + Flyway V1..V5\nPESSIMISTIC_WRITE en escrituras\nSin bloqueo en lecturas| PG_CAT[("PostgreSQL\ncatalog_services\nequipment\ninventory\nproduction_reservations")]
 ```
 
-Localmente Catalog está disponible en: `http://localhost:8081`
+---
 
-### Pruebas
+## 3. Stack Tecnológico y Versiones Reales (`pom.xml`)
 
-Para ejecutar la suite de pruebas unitarias y empaquetar la aplicación:
+| Componente | Tecnología / Dependencia | Versión |
+|---|---|---|
+| Lenguaje | Java (Eclipse Temurin) | `25` |
+| Framework Base | Spring Boot (`spring-boot-starter-parent`) | `4.1.1` |
+| Persistencia | Spring Data JPA / Hibernate + PostgreSQL Driver | Boot `4.1.1` |
+| Migraciones DB | Flyway Core + `flyway-database-postgresql` | Boot `4.1.1` (`V1` a `V5`) |
+| Observabilidad | `spring-boot-starter-actuator` + OpenAPI (`springdoc`) | `3.0.3` |
+| Testing | JUnit 5, Testcontainers (`2.0.5`), MockMvc, H2 | Boot `4.1.1` |
 
-En Windows:
+---
+
+## 4. Cumplimiento de Rúbrica EP2 (Matriz Caso 8)
+
+| Criterio de Evaluación EP2 | Implementación en `ms-eventomax-catalog` | Estado |
+|---|---|---|
+| **Consistencia de Inventario y Reservas** | Bloqueo pesimista ordenado por `equipmentId` ascendente (`findByEquipmentIdForUpdate`) para evitar deadlocks en reservas multi-ítem e idempotencia por `idempotencyKey`. | **CUMPLIDO** |
+| **Consultas Read-Only sin Contención de Locks** | Separación estricta entre `findByEquipmentIdWithoutLock` (lecturas de catálogo y enriquecimiento PDF de Notify) y `findByEquipmentIdForUpdate` (mutaciones de stock). | **CUMPLIDO** |
+| **Compensación Transaccional (Saga)** | Endpoint `POST /api/catalog/reservations/compensations` con soporte de `generation` fencing para liberar stock ante fallos posteriores en Productions. | **CUMPLIDO** |
+
+---
+
+## 5. Endpoints Expuestos
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/catalog/services` | Lista servicios activos contratables (`?activeOnly=true`). |
+| `GET` | `/api/catalog/services/{id}` | Obtiene detalle de un servicio por ID. |
+| `POST` | `/api/catalog/services` | Crea un nuevo servicio en el catálogo. |
+| `PUT` | `/api/catalog/services/{id}` | Actualiza nombre, descripción, precio o estado activo de un servicio. |
+| `GET` | `/api/catalog/equipment` | Lista equipamiento junto con `availableQty` y `reservedQty` (sin adquirir bloqueos de fila). |
+| `POST` | `/api/catalog/equipment` | Crea nuevo equipo e inicializa su inventario. |
+| `PUT` | `/api/catalog/equipment/{id}` | Actualiza metadatos y ajusta stock total validando que no sea menor al stock reservado. |
+| `POST` | `/api/catalog/reservations` | Reserva equipamiento de forma atómica e idempotente para una producción. |
+| `POST` | `/api/catalog/reservations/compensations` | Compensa/libera reservas activas de una producción validando generación. |
+| `GET` | `/api/catalog/reservations/productions/{productionId}` | Consulta las reservas asociadas a una producción. |
+| `GET` | `/actuator/health`, `/actuator/info` | Estado de salud del microservicio. |
+
+---
+
+## 6. Seguridad y Aislamiento de Red
+
+`ms-eventomax-catalog` se despliega en la red privada `eventomax-net` (`expose: ["8080"]`, sin puertos publicados al host). Todo acceso externo es autenticado y autorizado por **AWS API Gateway** y **`ms-eventomax-bff`** (permitiendo mutaciones de catálogo únicamente al rol `Admin` y reservas a `Admin`/`Productor`).
+
+---
+
+## 7. Base de Datos y Migraciones Flyway
+
+| Versión | Archivo | Descripción |
+|---|---|---|
+| `V1` | `V1__init_catalog.sql` | Crea tablas `catalog_services`, `equipment` e `inventory`. |
+| `V2` | `V2__seed_initial_catalog.sql` | Datos semilla de servicios y equipamiento técnico. |
+| `V3` | `V3__create_production_reservations.sql` | Crea tablas `production_reservations` y `production_reservation_items`. |
+| `V4` | `V4__add_generation_to_production_reservations.sql` | Añade columna `generation` para fencing de compensaciones. |
+| `V5` | `V5__fix_active_reservation_unique_index.sql` | Índice único parcial sobre reservas en estado `ACTIVE`. |
+
+---
+
+## 8. Variables de Entorno Requeridas
+
+| Variable | Ejemplo Placeholder | Descripción |
+|---|---|---|
+| `DB_URL` | `jdbc:postgresql://localhost:5433/eventomax_catalog` | URL JDBC PostgreSQL |
+| `DB_USER` | `catalog_user` | Usuario PostgreSQL |
+| `DB_PASSWORD` | `<SECRET_DB_PASSWORD>` | Contraseña PostgreSQL |
+| `JAVA_TOOL_OPTIONS` | `-XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0` | Límites de memoria JVM para EC2 `t3.large` |
+
+---
+
+## 9. Ejecución Local y Pruebas Automatizadas
+
 ```bash
-.\mvnw.cmd clean test
-.\mvnw.cmd package -DskipTests
+# Ejecutar suite completa de pruebas unitarias y de concurrencia con Testcontainers (67 tests)
+mvn clean test
 ```
 
-En Linux:
+**Resultado certificado en EP2:** `Tests run: 67, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS`.
+
+---
+
+## 10. Construcción y Despliegue Docker
+
 ```bash
-./mvnw clean test
-./mvnw package -DskipTests
-```
-
-## PRODUCCIÓN / DEMO
-
-La demo oficial NO depende de localhost ni del PC del instituto.
-Catalog se ejecuta en AWS EC2 mediante Docker.
-
-Flujo de la arquitectura:
-`Angular → Microsoft Entra ID → AWS API Gateway → ms-eventomax-bff → ms-eventomax-catalog → Amazon RDS PostgreSQL`
-
-Aclaraciones de seguridad y despliegue:
-- **Catalog NO es público**: Angular nunca consume Catalog directamente.
-- El BFF consume Catalog internamente mediante: `http://ms-eventomax-catalog:8080`.
-- La comunicación ocurre en la red segura `eventomax-net`.
-- En cloud no se depende de `localhost`.
-- `DB_URL`, `DB_USER` y `DB_PASSWORD` se inyectan de forma segura (variables de entorno en el host).
-- No documentar valores reales ni secretos.
-- Mantener separado desarrollo local de producción.
-
-Producción utiliza el archivo: `docker-compose.prod.yml`
-
-Debe existir la red externa `eventomax-net` para que los contenedores se comuniquen. Ejemplo seguro (solo si no existe):
-```bash
-docker network create eventomax-net
-```
-
-Para ejecutar en producción:
-```bash
+docker build -t ms-eventomax-catalog:ep2 .
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-**Importante:** `docker-compose.prod.yml` NO publica Catalog al host (EC2) para mantener la seguridad. El servicio expone únicamente su puerto 8080 interno, y el BFF lo consume a través de la red de Docker `eventomax-net`.
+---
 
-Diferencia de puertos:
-- `localhost:8081` = entorno local (para pruebas de desarrollo).
-- `puerto 8080 interno` = contenedor / red Docker cloud.
+## 11. Estado Actual de Certificación EP2 y Trazabilidad Jira
 
-## Endpoints Útiles
-
-- **Swagger UI**: [http://localhost:8081/swagger-ui/index.html](http://localhost:8081/swagger-ui/index.html)
-- **Actuator Health**: [http://localhost:8081/actuator/health](http://localhost:8081/actuator/health)
-- **Actuator Info**: [http://localhost:8081/actuator/info](http://localhost:8081/actuator/info)
-
-## Proyecto académico
-
-**Asignatura:** DSY1107 – Desarrollo Cloud Native I
-**Caso:** Caso 8 – EventoMax
+- **Pruebas Automatizadas:** `67/67` aprobadas (`InventoryConcurrencyIntegrationTest`, `InventoryReservationServiceTest`, `EquipmentControllerTest`, `EquipmentServiceTest`, `CatalogControllerTest`).
+- **Historias Jira:** `EMX-Bloque-1A` (Reservas atómicas, compensación y edición de inventario), `fix/catalog-inventory-readonly-lock` (Eliminación de lock pesimista en lecturas).
