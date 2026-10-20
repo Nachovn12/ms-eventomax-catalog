@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import cl.duoc.eventomax.catalog.exception.DuplicateEquipmentRequestException;
+import cl.duoc.eventomax.catalog.exception.InactiveEquipmentException;
+import cl.duoc.eventomax.catalog.exception.InsufficientInventoryException;
+import cl.duoc.eventomax.catalog.exception.ReservationConflictException;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,6 +58,24 @@ public class GlobalExceptionHandler {
         Map<String, String> response = new HashMap<>();
         response.put("error", "Unsupported media type. Please use application/json.");
         return new ResponseEntity<>(response, HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    @ExceptionHandler({
+        InsufficientInventoryException.class,
+        ReservationConflictException.class,
+        InactiveEquipmentException.class
+    })
+    public ResponseEntity<Map<String, String>> handleConflictExceptions(RuntimeException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("error", ex.getMessage());
+        return new ResponseEntity<>(response, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(DuplicateEquipmentRequestException.class)
+    public ResponseEntity<Map<String, String>> handleDuplicateEquipmentRequestException(DuplicateEquipmentRequestException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("error", ex.getMessage());
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(Exception.class)
