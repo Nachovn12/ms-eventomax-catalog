@@ -18,10 +18,10 @@ En **EventoMax EP2**, además de soportar la confirmación transaccional de prod
 
 ```mermaid
 flowchart LR
-    BFF["ms-eventomax-bff"] -->|/api/catalog/**| CAT["ms-eventomax-catalog (:8080)"]
-    PROD["ms-eventomax-productions"] -->|POST /api/catalog/reservations\nPOST /api/catalog/reservations/compensations| CAT
-    NOTIFY["ms-eventomax-notify"] -->|GET /api/catalog/equipment\n(Enriquecimiento Acta PDF)| CAT
-    CAT <-->|JPA + Flyway V1..V5\nPESSIMISTIC_WRITE en escrituras\nSin bloqueo en lecturas| PG_CAT[("PostgreSQL\ncatalog_services\nequipment\ninventory\nproduction_reservations")]
+    BFF["ms-eventomax-bff"] -->|"/api/catalog/**"| CAT["ms-eventomax-catalog (:8080)"]
+    PROD["ms-eventomax-productions"] -->|"POST /api/catalog/reservations<br/>POST /api/catalog/reservations/compensations"| CAT
+    NOTIFY["ms-eventomax-notify"] -->|"GET /api/catalog/equipment<br/>(Enriquecimiento Acta PDF)"| CAT
+    CAT <-->|"JPA + Flyway V1..V5<br/>PESSIMISTIC_WRITE en escrituras<br/>Sin bloqueo en lecturas"| PG_CAT[("PostgreSQL<br/>catalog_services<br/>equipment<br/>inventory<br/>production_reservations")]
 ```
 
 ---
