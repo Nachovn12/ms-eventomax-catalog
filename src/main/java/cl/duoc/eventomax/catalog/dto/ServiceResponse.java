@@ -14,6 +14,11 @@ public record ServiceResponse(
     @Schema(description = "Hourly or fixed rate of the service", example = "500.00")
     BigDecimal rate,
     @Schema(description = "Whether the service is active", example = "true")
-    Boolean active
+    Boolean active,
+    @Schema(description = "Optional image URL or compressed WebP/JPEG data URL", example = "assets/catalog/line-array-meyersound.svg")
+    String imageUrl
 ) {
+    public ServiceResponse(Long id, String name, String description, BigDecimal rate, Boolean active) {
+        this(id, name, description, rate, active, null);
+    }
 }

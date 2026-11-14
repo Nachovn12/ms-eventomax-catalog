@@ -28,6 +28,9 @@ public class Service {
     @Column(name = "active", nullable = false)
     private Boolean active = true;
 
+    @Column(name = "image_url", columnDefinition = "TEXT")
+    private String imageUrl;
+
     public Service() {
     }
 
@@ -69,5 +72,13 @@ public class Service {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 }

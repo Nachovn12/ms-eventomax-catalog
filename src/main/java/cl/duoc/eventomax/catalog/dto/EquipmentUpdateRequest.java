@@ -23,6 +23,14 @@ public record EquipmentUpdateRequest(
 
     @Min(0)
     @Schema(description = "Updated available quantity (optional, retains existing if omitted)", example = "15")
-    Integer availableQty
-) {}
+    Integer availableQty,
+
+    @Size(max = 600000)
+    @Schema(description = "Optional image URL or compressed WebP/JPEG data URL", example = "assets/catalog/audio-console-32ch.svg")
+    String imageUrl
+) {
+    public EquipmentUpdateRequest(String name, String description, Boolean active, Integer availableQty) {
+        this(name, description, active, availableQty, null);
+    }
+}
 

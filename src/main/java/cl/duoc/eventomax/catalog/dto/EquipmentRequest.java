@@ -24,5 +24,13 @@ public record EquipmentRequest(
     @NotNull
     @Min(0)
     @Schema(description = "Initial available quantity", example = "10")
-    Integer initialAvailableQty
-) {}
+    Integer initialAvailableQty,
+
+    @Size(max = 600000)
+    @Schema(description = "Optional image URL or compressed WebP/JPEG data URL", example = "assets/catalog/audio-console-32ch.svg")
+    String imageUrl
+) {
+    public EquipmentRequest(String name, String description, Boolean active, Integer initialAvailableQty) {
+        this(name, description, active, initialAvailableQty, null);
+    }
+}
