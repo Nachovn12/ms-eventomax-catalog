@@ -31,6 +31,7 @@ public class CatalogService {
         service.setDescription(request.description());
         service.setRate(request.rate());
         service.setActive(request.active());
+        service.setImageUrl(normalizeImageUrl(request.imageUrl()));
 
         Service savedService = repository.save(service);
         return mapToResponse(savedService);
@@ -42,7 +43,8 @@ public class CatalogService {
                 service.getName(),
                 service.getDescription(),
                 service.getRate(),
-                service.getActive()
+                service.getActive(),
+                service.getImageUrl()
         );
     }
 
@@ -59,7 +61,18 @@ public class CatalogService {
             service.setDescription(request.description());
             service.setRate(request.rate());
             service.setActive(request.active());
+            if (request.imageUrl() != null) {
+                service.setImageUrl(normalizeImageUrl(request.imageUrl()));
+            }
             return mapToResponse(repository.save(service));
         }).orElseThrow(() -> new ResourceNotFoundException("Service not found with id: " + id));
+    }
+
+    private String normalizeImageUrl(String imageUrl) {
+        if (imageUrl == null) {
+            return null;
+        }
+        String trimmed = imageUrl.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

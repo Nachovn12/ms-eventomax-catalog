@@ -27,7 +27,12 @@ public class EquipmentService {
 
     @Transactional
     public EquipmentResponse createEquipment(EquipmentRequest request) {
-        Equipment equipment = new Equipment(request.name(), request.description(), request.active());
+        Equipment equipment = new Equipment(
+                request.name(),
+                request.description(),
+                request.active(),
+                normalizeImageUrl(request.imageUrl())
+        );
         equipment = equipmentRepository.save(equipment);
 
         Inventory inventory = new Inventory(equipment, request.initialAvailableQty());
@@ -69,6 +74,9 @@ public class EquipmentService {
         equipment.setName(request.name().trim());
         equipment.setDescription(request.description() != null ? request.description().trim() : null);
         equipment.setActive(request.active());
+        if (request.imageUrl() != null) {
+            equipment.setImageUrl(normalizeImageUrl(request.imageUrl()));
+        }
         equipment = equipmentRepository.save(equipment);
 
         if (request.availableQty() != null) {
@@ -87,7 +95,16 @@ public class EquipmentService {
                 equipment.getDescription(),
                 equipment.getActive(),
                 inventory.getAvailableQty(),
-                inventory.getReservedQty()
+                inventory.getReservedQty(),
+                equipment.getImageUrl()
         );
+    }
+
+    private String normalizeImageUrl(String imageUrl) {
+        if (imageUrl == null) {
+            return null;
+        }
+        String trimmed = imageUrl.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

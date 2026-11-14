@@ -9,5 +9,10 @@ public record EquipmentResponse(
     String description,
     Boolean active,
     Integer availableQty,
-    Integer reservedQty
-) {}
+    Integer reservedQty,
+    String imageUrl
+) {
+    public EquipmentResponse(Long id, String name, String description, Boolean active, Integer availableQty, Integer reservedQty) {
+        this(id, name, description, active, availableQty, reservedQty, null);
+    }
+}

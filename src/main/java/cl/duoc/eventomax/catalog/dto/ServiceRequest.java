@@ -27,6 +27,13 @@ public record ServiceRequest(
 
     @NotNull
     @Schema(description = "Whether the service is active", example = "true")
-    Boolean active
+    Boolean active,
+
+    @Size(max = 600000)
+    @Schema(description = "Optional image URL or compressed WebP/JPEG data URL", example = "assets/catalog/line-array-meyersound.svg")
+    String imageUrl
 ) {
+    public ServiceRequest(String name, String description, BigDecimal rate, Boolean active) {
+        this(name, description, rate, active, null);
+    }
 }
