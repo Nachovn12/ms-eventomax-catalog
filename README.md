@@ -1,122 +1,105 @@
-# ms-eventomax-catalog — Microservicio de Catálogo de Servicios, Equipamiento y Reservas Transaccionales (EP2)
+<a href="https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/swagger-ui/index.html">
+  <img src="docs/assets/eventomax-catalog-banner.svg" alt="EventoMax — Catálogo e Inventario" width="100%" />
+</a>
 
-**Asignatura:** Desarrollo Cloud Native I (`DSY1107`)
-**Caso de Estudio:** Caso 8 — Plataforma de Producción y Montaje de Eventos (**EventoMax**)
-**Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
+> **Caso de Estudio 8:** Plataforma B2B de Producción y Montaje de Eventos &nbsp;|&nbsp; **Asignatura:** Desarrollo Cloud Native (`DSY1107`) &nbsp;|&nbsp; **Equipo:** Ignacio Valeria, Benjamín Flores, Benjamín Espinoza
 
----
+## Propósito del Repositorio
 
-## 1. Propósito del Repositorio y Rol en EventoMax
+`ms-eventomax-catalog` administra el catálogo maestro de servicios contratables, el inventario físico de equipamiento técnico (sonido, iluminación, escenarios, video) y las reservas atómicas por producción en **EventoMax**:
 
-`ms-eventomax-catalog` gestiona el catálogo maestro de servicios contratables, el inventario físico de equipamiento técnico (sonido, iluminación, escenarios, video) y las reservas atómicas e idempotentes por producción con control de concurrencia pesimista (`PESSIMISTIC_WRITE`) y *generation fencing* (`reservation_generation`).
+- **Concurrencia Pesimista Sin Deadlocks:** Las reservas multi-ítem adquieren bloqueos `PESSIMISTIC_WRITE` ordenando los registros por `equipmentId` ascendente (`InventoryReservationService`), garantizando consistencia estricta del stock disponible sin bloqueos cruzados.
+- **Lecturas Limpias Sin Contención:** Los endpoints `GET /api/catalog/equipment` y las consultas referenciales de disponibilidad evitan bloqueos de fila para no frenar el portal ni el armado de Actas PDF desde `ms-eventomax-notify`.
+- **Compensación Saga Idempotente:** Soporta reintentos mediante `idempotencyKey` y protección contra reordenamientos temporales mediante `X-Reservation-Generation` (*generation fencing*).
+- **Soporte Visual de Catálogo:** Almacena URLs o imágenes optimizadas (`image_url` en `V4`) para servicios y equipamiento mostrados en el portal operativo.
 
-En **EventoMax EP2**, además de soportar la confirmación transaccional de producciones desde `ms-eventomax-productions`, provee información referencial en tiempo real a `ms-eventomax-notify` (`CatalogEquipmentClient`) para enriquecer el **Acta de Cierre en PDF** con la disponibilidad operativa del catálogo.
+## Accesos Relacionados (Demo AWS)
 
----
+| Recurso | Enlace HTTPS | Acceso |
+| :--- | :--- | :--- |
+| **Swagger UI (Tags `Catálogo - Servicios / Equipos / Reservas`)** | [Abrir Swagger UI](https://7dewsdyt7i.execute-api.us-east-1.amazonaws.com/swagger-ui/index.html) | Lectura pública · `Bearer <JWT>` |
+| **Portal Web EventoMax** | [Abrir Portal Web](https://eventomax-production-portal-app.s3.us-east-1.amazonaws.com/index.html) | Microsoft Entra ID (OAuth 2.0 PKCE) |
 
-## 2. Arquitectura del Módulo y Diagrama
+## Endpoints Expuestos (`expose 8080`)
+
+Todo el tráfico externo transita por AWS API Gateway y `ms-eventomax-bff` en la red privada `eventomax-net`.
+
+| Método | Ruta | Consumidor / Uso | Descripción |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/catalog/services` | BFF (`Admin`, `Productor`) | Lista servicios técnicos activos del catálogo |
+| `GET` | `/api/catalog/services/{id}` | BFF (`Admin`, `Productor`) | Consulta el detalle de un servicio |
+| `POST` / `PUT` | `/api/catalog/services` · `/{id}` | BFF (`Admin`) | Crea o actualiza servicio, tarifa e imagen |
+| `GET` | `/api/catalog/equipment` · `/{id}` | BFF (`Admin`, `Productor`) · `notify` | Lista equipos junto a stock total, disponible y reservado (sin lock) |
+| `POST` / `PUT` | `/api/catalog/equipment` · `/{id}` | BFF (`Admin`) | Registra equipo nuevo o ajusta stock validando reservas activas |
+| `POST` | `/api/catalog/reservations` | `ms-eventomax-productions` | Reserva atómica e idempotente (acepta `X-Reservation-Generation`) |
+| `GET` | `/api/catalog/reservations/production/{productionId}` | BFF (`Admin`, `Productor`, `Organizador`) | Consulta reservas asociadas a una producción |
+| `POST` | `/api/catalog/reservations/production/{productionId}/compensate` | `ms-eventomax-productions` | Libera stock reservado por cancelación o fallo Saga |
+| `GET` | `/actuator/health`, `/actuator/info` | Interno | Sondeo de salud del contenedor |
+
+## Base de Datos y Migraciones Flyway (`V1..V4`)
+
+| Versión | Script | Cambios |
+| :--- | :--- | :--- |
+| `V1` | `V1__create_service_table.sql` | Tabla `service` con catálogo base de servicios |
+| `V2` | `V2__create_equipment_inventory_reservation_tables.sql` | Tablas `equipment`, `inventory` y `production_reservation` |
+| `V3` | `V3__reservation_generations.sql` | Tabla `reservation_generations` para *generation fencing* |
+| `V4` | `V4__add_catalog_image_url.sql` | Columna `image_url` en `service` y `equipment` |
+
+## Stack Tecnológico
+
+<table>
+  <tr>
+    <td align="center" width="20%">
+      <img src="docs/assets/tech/spring-boot.svg" width="36" height="36" alt="Spring Boot" /><br />
+      <strong>Java 25 · Boot 4.1.1</strong>
+    </td>
+    <td align="center" width="20%">
+      <img src="docs/assets/tech/postgresql.svg" width="36" height="36" alt="PostgreSQL" /><br />
+      <strong>PostgreSQL · Flyway</strong>
+    </td>
+    <td align="center" width="20%">
+      <img src="docs/assets/tech/aws-rds.svg" width="36" height="36" alt="Amazon RDS" /><br />
+      <strong>Amazon RDS (schema)</strong>
+    </td>
+    <td align="center" width="20%">
+      <img src="docs/assets/tech/docker.svg" width="36" height="36" alt="Docker" /><br />
+      <strong>Docker (512m)</strong>
+    </td>
+    <td align="center" width="20%">
+      <img src="docs/assets/tech/aws-ec2.svg" width="36" height="36" alt="Amazon EC2" /><br />
+      <strong>EC2 Apps Host</strong>
+    </td>
+  </tr>
+</table>
+
+## Arquitectura del Módulo
 
 ```mermaid
-flowchart LR
-    BFF["ms-eventomax-bff"] -->|"/api/catalog/**"| CAT["ms-eventomax-catalog (:8080)"]
-    PROD["ms-eventomax-productions"] -->|"POST /api/catalog/reservations<br/>POST /api/catalog/reservations/compensations"| CAT
-    NOTIFY["ms-eventomax-notify"] -->|"GET /api/catalog/equipment<br/>(Enriquecimiento Acta PDF)"| CAT
-    CAT <-->|"JPA + Flyway V1..V5<br/>PESSIMISTIC_WRITE en escrituras<br/>Sin bloqueo en lecturas"| PG_CAT[("PostgreSQL<br/>catalog_services<br/>equipment<br/>inventory<br/>production_reservations")]
+flowchart TB
+    BFF["ms-eventomax-bff"] -->|"/api/catalog/** (Servicios · Equipos · Reservas)"| CTRL
+    PROD["ms-eventomax-productions"] -->|"POST /reservations · /compensate<br/>(X-Reservation-Generation)"| CTRL
+    NOTIFY["ms-eventomax-notify"] -->|"GET /equipment (Acta PDF)"| CTRL
+
+    subgraph CAT["ms-eventomax-catalog (:8080)"]
+        direction LR
+        CTRL["Service · Equipment · Reservation Controllers"] --> SVC["InventoryReservationService<br/>PESSIMISTIC_WRITE ordenado"]
+        SVC --> PG[("PostgreSQL (V1..V4)<br/>service · equipment<br/>inventory · production_reservation")]
+    end
 ```
 
----
+## Variables de Entorno y Verificación
 
-## 3. Stack Tecnológico y Versiones Reales (`pom.xml`)
-
-| Componente | Tecnología / Dependencia | Versión |
-|---|---|---|
-| Lenguaje | Java (Eclipse Temurin) | `25` |
-| Framework Base | Spring Boot (`spring-boot-starter-parent`) | `4.1.1` |
-| Persistencia | Spring Data JPA / Hibernate + PostgreSQL Driver | Boot `4.1.1` |
-| Migraciones DB | Flyway Core + `flyway-database-postgresql` | Boot `4.1.1` (`V1` a `V5`) |
-| Observabilidad | `spring-boot-starter-actuator` + OpenAPI (`springdoc`) | `3.0.3` |
-| Testing | JUnit 5, Testcontainers (`2.0.5`), MockMvc, H2 | Boot `4.1.1` |
-
----
-
-## 4. Cumplimiento de Rúbrica EP2 (Matriz Caso 8)
-
-| Criterio de Evaluación EP2 | Implementación en `ms-eventomax-catalog` | Estado |
-|---|---|---|
-| **Consistencia de Inventario y Reservas** | Bloqueo pesimista ordenado por `equipmentId` ascendente (`findByEquipmentIdForUpdate`) para evitar deadlocks en reservas multi-ítem e idempotencia por `idempotencyKey`. | **CUMPLIDO** |
-| **Consultas Read-Only sin Contención de Locks** | Separación estricta entre `findByEquipmentIdWithoutLock` (lecturas de catálogo y enriquecimiento PDF de Notify) y `findByEquipmentIdForUpdate` (mutaciones de stock). | **CUMPLIDO** |
-| **Compensación Transaccional (Saga)** | Endpoint `POST /api/catalog/reservations/compensations` con soporte de `generation` fencing para liberar stock ante fallos posteriores en Productions. | **CUMPLIDO** |
-
----
-
-## 5. Endpoints Expuestos
-
-| Método | Ruta | Descripción |
-|---|---|---|
-| `GET` | `/api/catalog/services` | Lista servicios activos contratables (`?activeOnly=true`). |
-| `GET` | `/api/catalog/services/{id}` | Obtiene detalle de un servicio por ID. |
-| `POST` | `/api/catalog/services` | Crea un nuevo servicio en el catálogo. |
-| `PUT` | `/api/catalog/services/{id}` | Actualiza nombre, descripción, precio o estado activo de un servicio. |
-| `GET` | `/api/catalog/equipment` | Lista equipamiento junto con `availableQty` y `reservedQty` (sin adquirir bloqueos de fila). |
-| `POST` | `/api/catalog/equipment` | Crea nuevo equipo e inicializa su inventario. |
-| `PUT` | `/api/catalog/equipment/{id}` | Actualiza metadatos y ajusta stock total validando que no sea menor al stock reservado. |
-| `POST` | `/api/catalog/reservations` | Reserva equipamiento de forma atómica e idempotente para una producción. |
-| `POST` | `/api/catalog/reservations/compensations` | Compensa/libera reservas activas de una producción validando generación. |
-| `GET` | `/api/catalog/reservations/productions/{productionId}` | Consulta las reservas asociadas a una producción. |
-| `GET` | `/actuator/health`, `/actuator/info` | Estado de salud del microservicio. |
-
----
-
-## 6. Seguridad y Aislamiento de Red
-
-`ms-eventomax-catalog` se despliega en la red privada `eventomax-net` (`expose: ["8080"]`, sin puertos publicados al host). Todo acceso externo es autenticado y autorizado por **AWS API Gateway** y **`ms-eventomax-bff`** (permitiendo mutaciones de catálogo únicamente al rol `Admin` y reservas a `Admin`/`Productor`).
-
----
-
-## 7. Base de Datos y Migraciones Flyway
-
-| Versión | Archivo | Descripción |
-|---|---|---|
-| `V1` | `V1__init_catalog.sql` | Crea tablas `catalog_services`, `equipment` e `inventory`. |
-| `V2` | `V2__seed_initial_catalog.sql` | Datos semilla de servicios y equipamiento técnico. |
-| `V3` | `V3__create_production_reservations.sql` | Crea tablas `production_reservations` y `production_reservation_items`. |
-| `V4` | `V4__add_generation_to_production_reservations.sql` | Añade columna `generation` para fencing de compensaciones. |
-| `V5` | `V5__fix_active_reservation_unique_index.sql` | Índice único parcial sobre reservas en estado `ACTIVE`. |
-
----
-
-## 8. Variables de Entorno Requeridas
-
-| Variable | Ejemplo Placeholder | Descripción |
-|---|---|---|
-| `DB_URL` | `jdbc:postgresql://localhost:5433/eventomax_catalog` | URL JDBC PostgreSQL |
-| `DB_USER` | `catalog_user` | Usuario PostgreSQL |
-| `DB_PASSWORD` | `<SECRET_DB_PASSWORD>` | Contraseña PostgreSQL |
-| `JAVA_TOOL_OPTIONS` | `-XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0` | Límites de memoria JVM para EC2 `t3.large` |
-
----
-
-## 9. Ejecución Local y Pruebas Automatizadas
+| Variable | Ejemplo | Descripción |
+| :--- | :--- | :--- |
+| `DB_URL` | `jdbc:postgresql://<POSTGRES_HOST>:5432/eventomax?currentSchema=catalog` | URL JDBC hacia PostgreSQL / RDS |
+| `DB_USER` / `DB_PASSWORD` | `eventomax_prod` / `<SECRET>` | Credenciales del esquema `catalog` |
+| `DB_SCHEMA` / `FLYWAY_CREATE_SCHEMAS` | `catalog` / `true` | Esquema aislado gestionado por Flyway |
+| `JAVA_TOOL_OPTIONS` | `-XX:InitialRAMPercentage=25.0 -XX:MaxRAMPercentage=65.0` | Presupuesto de heap (`mem_limit: 512m`) |
 
 ```bash
-# Ejecutar suite completa de pruebas unitarias y de concurrencia con Testcontainers (67 tests)
-mvn clean test
+# Ejecutar pruebas unitarias y de concurrencia con Testcontainers PostgreSQL
+./mvnw -B -ntp verify
+
+# Desplegar en Docker (mem_limit: 512m)
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
-
-**Resultado certificado en EP2:** `Tests run: 67, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS`.
-
----
-
-## 10. Construcción y Despliegue Docker
-
-```bash
-docker build -t ms-eventomax-catalog:ep2 .
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
----
-
-## 11. Estado Actual de Certificación EP2 y Trazabilidad Jira
-
-- **Pruebas Automatizadas:** `67/67` aprobadas (`InventoryConcurrencyIntegrationTest`, `InventoryReservationServiceTest`, `EquipmentControllerTest`, `EquipmentServiceTest`, `CatalogControllerTest`).
-- **Historias Jira:** `EMX-Bloque-1A` (Reservas atómicas, compensación y edición de inventario), `fix/catalog-inventory-readonly-lock` (Eliminación de lock pesimista en lecturas).
